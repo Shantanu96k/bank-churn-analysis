@@ -30,32 +30,41 @@ group by gender ;
 
 -- What is the average balance of all customers?
 select avg(balance) from bank_data;
+
 select avg(balance) from bank_data
 where exited = 1;
+
 select gender, avg(balance) from bank_data
 group by gender;
+
 select gender, avg(balance) from bank_data
 where exited = 1
 group by gender;
 
 -- How many customers have a credit card?
-select count(*) from bank_data;
-select count(*) from bank_data
+select count(*) as total from bank_data;
+
+select count(*) as Exited from bank_data
 where exited = 1;
+
 select gender, count(*) from bank_data
 group by gender;
 
 -- How many customers are active members of the bank?
-select count(*) from bank_data
+select count(*) as active_member from bank_data
 where isactivemember = 1;
 
 -- What is the average estimated salary of customers?
+select round((EstimatedSalary),2) as Avg_Salary from bank_data;
 
 -- How many customers have more than one product?
 select count(*) as more_than_one_product from bank_data
 where NumOfProducts > 1;
 
 -- What is the distribution of customers by tenure?
+select Tenure,count(*) from bank_data
+group by Tenure
+order by Tenure;
 
 -- How many customers have zero balance?
 select count(*) as zero_balance from bank_data
@@ -65,7 +74,10 @@ where balance = 0;
 select avg(age) as avg_age from bank_data;
 
 -- What is the average credit score of customers who exited vs those who stayed?
-select Exited, avg(CreditScore) as Avg_Credit_Score
+select case
+when Exited = 1 then 'Exited '
+else 'Stayed'
+end as Exited, avg(CreditScore) as Avg_Credit_Score
 from bank_data
 group by exited;
 
@@ -75,27 +87,35 @@ group by Geography
 order by count(*) desc;
 
 -- Which geography has the highest churn rate?
-select Geography, count(*) as highest_churn_rate from bank_data
-where Exited = 0
-group by Geography
-Order by count(*) desc;
+select Geography, count(*) as total_customer,
+avg(Exited) * 100 as churn_rate
+from bank_data
+group by Geography;
 
 -- What is the average balance for customers in each geography?
 select Geography, avg(Balance) as Avg_balance from bank_data
 group by Geography;
 
 -- How does churn vary by gender?
-select gender,Exited, count(*) as churn from bank_data
-group by gender, exited;
+select gender, round(avg(Exited) * 100 ,2) as churn from bank_data
+group by gender;
 
 -- What is the average age of customers who exited vs those who stayed?
-select Exited, avg(age) as avg_age from bank_data
+select case
+when Exited = 1 then 'Exited '
+else 'Stayed'
+end as Exited, avg(age) as avg_age from bank_data
 group by exited;
-select Exited,gender, avg(age) as avg_age from bank_data
+
+--  What is the average age of customers who exited vs those who stayed group by gender?
+select case
+when Exited = 1 then 'Exited '
+else 'Stayed'
+end as Exited, gender, avg(age) as avg_age from bank_data
 group by exited, gender;
 
 -- What is the average estimated salary by geography?
-select geography,gender, avg(EstimatedSalary) as avg_salary from bank_data
+select geography,gender,round( avg(EstimatedSalary),2) as avg_salary from bank_data
 group by geography,gender
 order by geography;
 
@@ -169,16 +189,16 @@ group by NumOfProducts;
 -- Advance
 -- Find the top 10 customers with the highest balance.
 select surname, 
-max(balance) over (order by balance desc)
+max(balance) over (order by balance desc) as max_balance
 from bank_data;
 -- using windo rank function
 select surname, balance, 
-rank() over (order by balance desc)
+rank() over (order by balance desc) Ranking
 from bank_data
 limit 10;
 
 -- Find the average salary of customers grouped by geography and gender.
-select geography, gender, avg(EstimatedSalary) from bank_data
+select geography, gender, round(avg(EstimatedSalary),2) as average from bank_data
 group by geography, gender
 order by geography;
 
@@ -272,9 +292,92 @@ WHERE exited = 1
 GROUP BY geography;
 
 -- Rank customers by credit score within each gender.
+select gender,customerid, surname,CreditScore, RowNumber, Rnk,DenseRnk from ( select *,
+row_number() over (partition by gender order by CreditScore desc) as RowNumber,
+rank() over (partition by gender order by CreditScore desc) as Rnk,
+dense_rank() over (partition by gender order by CreditScore desc) as DenseRnk
+from bank_data) t
+where RowNumber <= 10;
 
 -- Identify customers whose salary is above the overall average salary but still exited.
+select Distinct customerid, surname, EstimatedSalary, rnk from (
+select *,
+row_number() over (partition by exited order by EstimatedSalary desc) as rnk, 
+avg(EstimatedSalary) over (partition by Exited) as avg_salary from bank_data
+) t
+where EstimatedSalary > avg_salary and Exited = 1 ;
 
 -- Find the top 3 age groups with the highest churn rate.
+Select age_group,
+count(*) as total_customer,
+sum(Exited) as total_exited,
+avg(Exited) * 100 as churn_rate from (
+select *,case
+	when age between 18 and 25 then 'Young'
+    when age between 26 and 40 then 'Adult'
+    when age between 41 and 60 then 'Middle Age'
+    else 'Senior'
+end as Age_group from bank_data
+) t
+group by Age_group
+order by churn_rate desc
+limit 3;
 
 -- Calculate the cumulative balance of customers ordered by credit score.
+select customerID, surname, geography,gender,age, creditScore, balance,
+sum(balance) over (partition by geography order by CreditScore ) as Cumullative_balance
+from bank_data;
+
+-- Find the top 5 customers with the highest balance in each geography.
+select CustomerId, Surname, Geography, Balance from (
+select *,
+row_number () over (partition by geography order by balance desc) as rnk
+from bank_data
+) t
+where rnk <= 5;
+
+-- Find customers whose balance is greater than the average balance of their geography.
+
+select CustomerId, Surname, Geography, Balance, avg_balance from (
+select *,
+row_number() over (partition by Geography order by Geography) as rnk,
+avg(balance) over (partition by geography order by Geography) as avg_balance
+from bank_data
+) t
+where balance > avg_balance and rnk <= 10;
+
+
+-- Rank customers within each geography based on their credit score.
+select CustomerId, Surname, Geography, Balance CreditScore, ro from (
+select *,
+row_number() over (partition by Geography order by CreditScore desc) as ro,
+rank() over (partition by Geography order by CreditScore desc) as rnk,
+dense_rank() over (partition by Geography order by CreditScore desc) as dens
+from bank_data
+) t
+where ro <= 10;
+
+-- Calculate the running total of balance ordered by credit score.
+select customerID, surname, geography,gender,age, creditScore, balance,
+sum(balance) over (partition by geography order by CreditScore ) as Cumullative_balance
+from bank_data;
+
+
+
+select
+    Geography,
+    Gender,
+    case 
+        when Age between 18 and 25 then 'Young'
+        when Age between 26 and 40 then 'Middle Age'
+        when Age between 41 and 60 then 'Adult'
+        else 'Senior'
+    end as Age_Group,
+    
+    COUNT(*) as Total_Customers,
+    SUM(Exited) as Churned_Customers,
+    
+    ROUND(Avg(Exited) * 100.0 ,2) as Churn_Rate
+from bank_data
+group by Geography, Gender, Age_Group
+order by Churn_Rate desc;
